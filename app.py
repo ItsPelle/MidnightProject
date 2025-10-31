@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
 import base64
-import tempfile
-import os
 
 st.set_page_config(page_title="AI Business Insights System", layout="wide")
 
@@ -144,16 +142,14 @@ def generate_pdf_report(insights_text, chart_images, department):
     pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, txt=f"{department} AI Report", ln=True, align="C")
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, txt=insights_text)
 
-    for i, img_buf in enumerate(chart_images):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            tmp_file.write(img_buf.getbuffer())
-            tmp_path = tmp_file.name
+    # Fix encoding for emojis/unicode
+    safe_text = insights_text.encode("latin-1", "replace").decode("latin-1")
+    pdf.multi_cell(0, 10, txt=safe_text)
 
+    for img_buf in chart_images:
         pdf.add_page()
-        pdf.image(tmp_path, x=10, y=30, w=180)
-        os.remove(tmp_path)
+        pdf.image(img_buf, x=10, y=30, w=180)
 
     pdf_output = BytesIO()
     pdf.output(pdf_output)
