@@ -4,10 +4,11 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
 import base64
-import tempfile
-import os
+import openai
 
+# -------------------- PAGE CONFIG --------------------
 st.set_page_config(page_title="AI Business Insights System", layout="wide")
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # Sidebar logo + navigation
 st.sidebar.image("https://i.imgur.com/vy7RaWQ.png", width=180)
@@ -38,7 +39,11 @@ def generate_ai_insights(df, department):
     if len(numeric_cols) > 0:
         desc = df[numeric_cols].describe().T
         insights += "### 🔢 Numeric Summary\n"
-        insights += desc.to_markdown() + "\n\n"
+        try:
+            from tabulate import tabulate
+            insights += desc.to_markdown() + "\n\n"
+        except ImportError:
+            insights += desc.to_string() + "\n\n"
 
     if len(text_cols) > 0:
         insights += "### 🗂️ Common Text Fields\n"
@@ -84,6 +89,33 @@ def generate_ai_insights(df, department):
     return insights
 
 
+# -------------------- AI REASONING ENGINE --------------------
+def ai_reasoning(df, department):
+    # Convert a sample of the dataframe to text for GPT
+    sample_data = df.head(10).to_string(index=False)
+    prompt = f"""
+    You are an expert business analyst for the {department} department.
+    Analyze the following data and generate:
+    1. Key trends and findings
+    2. Risks or anomalies
+    3. Strategic recommendations
+    4. Insights summary in bullet points.
+
+    Data sample:
+    {sample_data}
+    """
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message["content"]
+
+    except Exception as e:
+        return f"⚠️ AI analysis failed: {e}"
+
+
 # -------------------- VISUALIZATION FUNCTION --------------------
 def show_charts(df):
     numeric_cols = df.select_dtypes(include=['number']).columns
@@ -110,11 +142,7 @@ def show_charts(df):
     st.markdown("#### Value Distribution (Pie Chart)")
     first_col = numeric_cols[0]
     fig2, ax2 = plt.subplots()
-    # Guard against non-hashable values: convert to str for counting if needed
-    try:
-        df[first_col].value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
-    except Exception:
-        df[first_col].astype(str).value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
+    df[first_col].value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
     ax2.set_ylabel('')
     st.pyplot(fig2)
     buf2 = BytesIO()
@@ -136,64 +164,40 @@ def show_charts(df):
             fig3.savefig(buf3, format="png")
             buf3.seek(0)
             images.append(buf3)
-        except Exception:
+        except:
             st.warning("⚠️ Couldn't process trend chart — check your date column format.")
     return images
 
 
-# -------------------- ROBUST PDF REPORT GENERATOR --------------------
-def generate_pdf_report(insights_text, chart_images, department):
-    # create PDF
+# -------------------- PDF REPORT GENERATOR --------------------
+def generate_pdf_report(insights_text, chart_images, department, ai_text=None):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, txt=f"{department} AI Report", ln=True, align="C")
     pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, txt=insights_text.encode('latin-1', 'replace').decode('latin-1'))
 
-    # safely encode text (replace unsupported chars)
-    safe_text = insights_text.encode("latin-1", "replace").decode("latin-1")
-    pdf.multi_cell(0, 10, txt=safe_text)
+    for img_buf in chart_images:
+        pdf.add_page()
+        pdf.image(img_buf, x=10, y=30, w=180)
 
-    # Write chart images to temp files and add them to PDF
-    temp_files = []
-    try:
-        for i, img_buf in enumerate(chart_images):
-            # ensure buffer is at start
-            try:
-                img_buf.seek(0)
-            except Exception:
-                pass
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-                tmp_file.write(img_buf.getbuffer())
-                tmp_path = tmp_file.name
-                temp_files.append(tmp_path)
+    # Add AI insights if available
+    if ai_text:
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, txt="AI Analysis", ln=True)
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, txt=ai_text.encode('latin-1', 'replace').decode('latin-1'))
 
-            pdf.add_page()
-            pdf.image(tmp_path, x=10, y=30, w=180)
-
-        # output PDF as bytes safely
-        pdf_str = pdf.output(dest='S')  # returns str in Py3
-        if isinstance(pdf_str, str):
-            # encode to latin-1 bytes (fpdf uses latin1 internally)
-            pdf_bytes = pdf_str.encode('latin-1', 'replace')
-        else:
-            pdf_bytes = pdf_str
-
-        pdf_output = BytesIO()
-        pdf_output.write(pdf_bytes)
-        pdf_output.seek(0)
-        return pdf_output
-
-    finally:
-        # cleanup temp files
-        for f in temp_files:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
+    pdf_output = BytesIO()
+    pdf.output(pdf_output)
+    pdf_output.seek(0)
+    return pdf_output
 
 
 # -------------------- FILE UPLOAD + DISPLAY --------------------
+# Add sample CSV for testing
 sample_csv = """name,expense,leads,date
 Campaign A,400000,120,2024-01-01
 Campaign B,600000,90,2024-02-01
@@ -216,12 +220,20 @@ if uploaded_file is not None:
     insights = generate_ai_insights(df, department)
     st.markdown(insights)
 
+    # Run AI analysis
+    st.subheader("🧠 AI-Powered Deep Insights")
+    ai_text = None
+    if st.button("Run AI Analysis"):
+        with st.spinner("Analyzing your data with AI..."):
+            ai_text = ai_reasoning(df, department)
+            st.markdown(ai_text)
+
     charts = show_charts(df)
 
     # Export options
     st.subheader("📤 Export Options")
     insights_text = insights.replace("#", "").replace("*", "")
-    pdf_data = generate_pdf_report(insights_text, charts or [], department)
+    pdf_data = generate_pdf_report(insights_text, charts or [], department, ai_text)
     st.download_button(
         label="📄 Download PDF Report",
         data=pdf_data,
