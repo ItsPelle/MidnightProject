@@ -1,106 +1,193 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+from fpdf import FPDF
 
-# --- PAGE CONFIG ---
-st.set_page_config(
-    page_title="AI Organizational Insights System",
-    page_icon="🧠",
-    layout="wide"
+st.set_page_config(page_title="AI Business Insights System", layout="wide")
+
+# Sidebar logo + navigation
+st.sidebar.image("https://i.imgur.com/vy7RaWQ.png", width=180)
+st.sidebar.title("Department Navigation")
+department = st.sidebar.selectbox(
+    "Select Department",
+    ["Overview", "Finance", "Marketing", "HR", "Membership"]
 )
 
-# --- SIDEBAR ---
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Artificial_Intelligence_Logo.svg/1024px-Artificial_Intelligence_Logo.svg.png", width=100)
-st.sidebar.title("AI Organizational Insights System")
-st.sidebar.markdown("---")
-selected_section = st.sidebar.radio(
-    "Choose section:",
-    ["Overview", "Finance Department", "Marketing Department", "Membership Department", "HR Department", "Upload & Analyze Data"]
-)
-st.sidebar.markdown("---")
-st.sidebar.info("Developed by Apelles Kamau 🇰🇪")
-
-# --- TITLE ---
 st.title("🤖 AI Organizational Insights System")
-st.write("An intelligent data analysis dashboard that helps organizations summarize and interpret key performance data from different departments.")
+st.write("Upload department reports (CSV) and get AI-powered summaries, visualizations, and downloadable reports.")
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload a CSV file for analysis", type=["csv"])
 
-# --- FUNCTION TO GENERATE AI-STYLE INSIGHTS ---
-def generate_ai_insights(df):
-    insights = []
+# -------------------- CORE AI ANALYSIS LOGIC --------------------
+def generate_ai_insights(df, department):
+    insights = ""
 
-    # Basic summaries
-    insights.append(f"The dataset has **{df.shape[0]} rows** and **{df.shape[1]} columns**.")
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-    if numeric_cols:
-        insights.append("### 📊 Key Numerical Insights:")
-        for col in numeric_cols:
-            insights.append(f"- The **average of {col}** is {df[col].mean():,.2f}.")
-            insights.append(f"- The **highest value in {col}** is {df[col].max():,.2f}, and the lowest is {df[col].min():,.2f}.")
-    else:
-        insights.append("No numeric data found for statistical summary.")
+    if df.empty:
+        return "⚠️ No data found in the uploaded file."
 
-    # Text-based columns
-    text_cols = df.select_dtypes(include=['object']).columns.tolist()
-    if text_cols:
-        insights.append("### 🧾 Text Data Overview:")
+    insights += f"### 📊 Data Overview\n"
+    insights += f"- Rows: {df.shape[0]}\n"
+    insights += f"- Columns: {df.shape[1]}\n\n"
+
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    text_cols = df.select_dtypes(include=['object']).columns
+
+    if len(numeric_cols) > 0:
+        desc = df[numeric_cols].describe().T
+        insights += "### 🔢 Numeric Summary\n"
+        insights += desc.to_markdown() + "\n\n"
+
+    if len(text_cols) > 0:
+        insights += "### 🗂️ Common Text Fields\n"
         for col in text_cols:
-            top_values = df[col].value_counts().head(3)
-            insights.append(f"- **{col}** most common values: {', '.join(top_values.index.astype(str))}")
-    
-    insights.append("---")
-    insights.append("✅ *AI Summary Complete — this system can be expanded to automatically detect anomalies, trends, and department-specific recommendations.*")
-    return "\n".join(insights)
+            most_common = df[col].mode()[0] if not df[col].mode().empty else "N/A"
+            insights += f"- **{col}:** Most common → {most_common}\n"
+        insights += "\n"
 
-# --- SECTION LOGIC ---
-if selected_section == "Overview":
-    st.subheader("System Overview")
-    st.write("""
-    This AI-powered system helps your organization interpret complex data from multiple departments —
-    such as **Finance**, **Marketing**, **Membership**, and **Human Resources (HR)** — by generating
-    easy-to-understand summaries and actionable insights.
-    """)
+    # -------------------- Department-Specific Recommendations --------------------
+    insights += "## 💡 AI Recommendations\n"
 
-elif selected_section == "Finance Department":
-    st.subheader("💰 Finance Department Insights")
-    st.write("This section will analyze financial reports, revenue trends, and expenditure breakdowns.")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        st.markdown(generate_ai_insights(df))
+    if department == "Finance":
+        insights += "- 💰 Review budget allocation for cost efficiency.\n"
+        insights += "- 📈 Automate expense tracking to reduce errors.\n"
+        if any("expense" in c.lower() for c in df.columns):
+            avg_exp = df[[c for c in df.columns if "expense" in c.lower()]].mean().mean()
+            if avg_exp > 500000:
+                insights += "- ⚠️ High expenses detected. Consider reducing non-essential spending.\n"
+            else:
+                insights += "- ✅ Spending appears within a healthy range.\n"
 
-elif selected_section == "Marketing Department":
-    st.subheader("📢 Marketing Department Insights")
-    st.write("This section focuses on campaign performance, engagement data, and lead conversions.")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        st.markdown(generate_ai_insights(df))
+    elif department == "Marketing":
+        insights += "- 📢 Focus on high-performing campaigns.\n"
+        insights += "- 📊 Consider A/B testing new ad creatives.\n"
+        if any("leads" in c.lower() for c in df.columns):
+            avg_leads = df[[c for c in df.columns if "leads" in c.lower()]].mean().mean()
+            insights += f"- Average leads: **{avg_leads:.1f}**\n"
 
-elif selected_section == "Membership Department":
-    st.subheader("👥 Membership Department Insights")
-    st.write("This section provides data summaries for member growth, activity, and retention analysis.")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        st.markdown(generate_ai_insights(df))
+    elif department == "HR":
+        insights += "- 👥 Monitor attendance and engagement metrics.\n"
+        insights += "- 🧠 Invest in training for low-performing teams.\n"
 
-elif selected_section == "HR Department":
-    st.subheader("👔 Human Resource (HR) Department Insights")
-    st.write("This area analyzes employee records, attendance, and performance data.")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        st.markdown(generate_ai_insights(df))
+    elif department == "Membership":
+        insights += "- 🎯 Track new vs returning members.\n"
+        insights += "- 📉 If growth slows, offer loyalty rewards.\n"
+        if any("member" in c.lower() for c in df.columns):
+            total_members = df[[c for c in df.columns if "member" in c.lower()]].sum().sum()
+            insights += f"- Total membership count: **{total_members:,.0f}**\n"
 
-elif selected_section == "Upload & Analyze Data":
-    st.subheader("📤 Upload Any Department CSV")
-    st.write("Upload your file below and get instant summaries and AI insights:")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.success("✅ File uploaded successfully!")
-        st.dataframe(df.head())
-        st.markdown(generate_ai_insights(df))
     else:
-        st.warning("Please upload a CSV file to begin analysis.")
+        insights += "- 📘 Upload department data for deeper insights.\n"
+
+    return insights
+
+
+# -------------------- VISUALIZATION FUNCTION --------------------
+def show_charts(df):
+    numeric_cols = df.select_dtypes(include=['number']).columns
+
+    if len(numeric_cols) == 0:
+        st.info("No numeric columns found for visualization.")
+        return None
+
+    st.subheader("📉 Data Visualizations")
+    images = []
+
+    # Bar Chart
+    st.markdown("#### Average by Column")
+    mean_values = df[numeric_cols].mean().sort_values(ascending=False)
+    fig, ax = plt.subplots()
+    mean_values.plot(kind="bar", ax=ax)
+    st.pyplot(fig)
+    buf = BytesIO()
+    fig.savefig(buf, format="png")
+    buf.seek(0)
+    images.append(buf)
+
+    # Pie Chart
+    st.markdown("#### Value Distribution (Pie Chart)")
+    first_col = numeric_cols[0]
+    fig2, ax2 = plt.subplots()
+    df[first_col].value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
+    ax2.set_ylabel('')
+    st.pyplot(fig2)
+    buf2 = BytesIO()
+    fig2.savefig(buf2, format="png")
+    buf2.seek(0)
+    images.append(buf2)
+
+    # Trend Chart
+    date_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+    if len(date_cols) > 0:
+        st.markdown("#### Trend Over Time")
+        try:
+            df[date_cols[0]] = pd.to_datetime(df[date_cols[0]], errors='coerce')
+            trend_df = df.groupby(df[date_cols[0]].dt.to_period("M"))[numeric_cols[0]].mean()
+            fig3, ax3 = plt.subplots()
+            trend_df.plot(kind="line", ax=ax3, marker='o')
+            st.pyplot(fig3)
+            buf3 = BytesIO()
+            fig3.savefig(buf3, format="png")
+            buf3.seek(0)
+            images.append(buf3)
+        except:
+            st.warning("⚠️ Couldn't process trend chart — check your date column format.")
+    return images
+
+
+# -------------------- PDF REPORT GENERATOR --------------------
+def generate_pdf_report(insights_text, chart_images, department):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, txt=f"{department} AI Report", ln=True, align="C")
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, txt=insights_text)
+
+    for img_buf in chart_images:
+        pdf.add_page()
+        pdf.image(img_buf, x=10, y=30, w=180)
+
+    pdf_output = BytesIO()
+    pdf.output(pdf_output)
+    pdf_output.seek(0)
+    return pdf_output
+
+
+# -------------------- FILE UPLOAD + DISPLAY --------------------
+uploaded_file = st.file_uploader("📂 Upload a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.success("✅ File uploaded successfully!")
+    st.dataframe(df.head())
+
+    insights = generate_ai_insights(df, department)
+    st.markdown(insights)
+
+    charts = show_charts(df)
+
+    # Export options
+    st.subheader("📤 Export Options")
+    insights_text = insights.replace("#", "").replace("*", "")
+    pdf_data = generate_pdf_report(insights_text, charts or [], department)
+    st.download_button(
+        label="📄 Download PDF Report",
+        data=pdf_data,
+        file_name=f"{department}_AI_Report.pdf",
+        mime="application/pdf"
+    )
+
+    # Excel Export
+    excel_data = BytesIO()
+    with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Data')
+    excel_data.seek(0)
+    st.download_button(
+        label="📊 Download Excel Summary",
+        data=excel_data,
+        file_name=f"{department}_Data_Summary.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+else:
+    st.info("Upload a CSV file to begin AI analysis.")
