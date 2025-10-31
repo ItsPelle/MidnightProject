@@ -1,0 +1,9 @@
+date,department,expense,income,leads,attendance,members,new_members
+2025-01-01,Finance,450000,1200000,0,0,0,0
+2025-02-01,Finance,520000,1100000,0,0,0,0
+2025-03-01,Marketing,0,0,120,0,0,0
+2025-04-01,Marketing,0,0,180,0,0,0
+2025-05-01,HR,0,0,0,95,0,0
+2025-06-01,HR,0,0,0,88,0,0
+2025-07-01,Membership,0,0,0,0,350,50
+2025-08-01,Membership,0,0,0,0,420,70
