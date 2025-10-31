@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
 import base64
+import tempfile
+import os
 
 st.set_page_config(page_title="AI Business Insights System", layout="wide")
 
@@ -135,7 +137,7 @@ def show_charts(df):
     return images
 
 
-# -------------------- PDF REPORT GENERATOR --------------------
+# -------------------- FIXED PDF REPORT GENERATOR --------------------
 def generate_pdf_report(insights_text, chart_images, department):
     pdf = FPDF()
     pdf.add_page()
@@ -144,9 +146,14 @@ def generate_pdf_report(insights_text, chart_images, department):
     pdf.set_font("Arial", size=12)
     pdf.multi_cell(0, 10, txt=insights_text)
 
-    for img_buf in chart_images:
+    for i, img_buf in enumerate(chart_images):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+            tmp_file.write(img_buf.getbuffer())
+            tmp_path = tmp_file.name
+
         pdf.add_page()
-        pdf.image(img_buf, x=10, y=30, w=180)
+        pdf.image(tmp_path, x=10, y=30, w=180)
+        os.remove(tmp_path)
 
     pdf_output = BytesIO()
     pdf.output(pdf_output)
@@ -155,7 +162,6 @@ def generate_pdf_report(insights_text, chart_images, department):
 
 
 # -------------------- FILE UPLOAD + DISPLAY --------------------
-# Add sample CSV for testing
 sample_csv = """name,expense,leads,date
 Campaign A,400000,120,2024-01-01
 Campaign B,600000,90,2024-02-01
