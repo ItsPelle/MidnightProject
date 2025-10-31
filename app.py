@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
+import base64
 
 st.set_page_config(page_title="AI Business Insights System", layout="wide")
 
@@ -154,6 +155,19 @@ def generate_pdf_report(insights_text, chart_images, department):
 
 
 # -------------------- FILE UPLOAD + DISPLAY --------------------
+# Add sample CSV for testing
+sample_csv = """name,expense,leads,date
+Campaign A,400000,120,2024-01-01
+Campaign B,600000,90,2024-02-01
+Campaign C,550000,130,2024-03-01
+"""
+st.download_button(
+    label="⬇️ Download Sample CSV (for testing)",
+    data=sample_csv,
+    file_name="sample_data.csv",
+    mime="text/csv"
+)
+
 uploaded_file = st.file_uploader("📂 Upload a CSV file", type=["csv"])
 
 if uploaded_file is not None:
