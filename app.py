@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
 import base64
+import tempfile
+import os
 
 st.set_page_config(page_title="AI Business Insights System", layout="wide")
 
@@ -108,7 +110,11 @@ def show_charts(df):
     st.markdown("#### Value Distribution (Pie Chart)")
     first_col = numeric_cols[0]
     fig2, ax2 = plt.subplots()
-    df[first_col].value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
+    # Guard against non-hashable values: convert to str for counting if needed
+    try:
+        df[first_col].value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
+    except Exception:
+        df[first_col].astype(str).value_counts().head(5).plot(kind='pie', autopct='%1.1f%%', ax=ax2)
     ax2.set_ylabel('')
     st.pyplot(fig2)
     buf2 = BytesIO()
@@ -130,31 +136,61 @@ def show_charts(df):
             fig3.savefig(buf3, format="png")
             buf3.seek(0)
             images.append(buf3)
-        except:
+        except Exception:
             st.warning("⚠️ Couldn't process trend chart — check your date column format.")
     return images
 
 
-# -------------------- FIXED PDF REPORT GENERATOR --------------------
+# -------------------- ROBUST PDF REPORT GENERATOR --------------------
 def generate_pdf_report(insights_text, chart_images, department):
+    # create PDF
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, txt=f"{department} AI Report", ln=True, align="C")
     pdf.set_font("Arial", size=12)
 
-    # Fix encoding for emojis/unicode
+    # safely encode text (replace unsupported chars)
     safe_text = insights_text.encode("latin-1", "replace").decode("latin-1")
     pdf.multi_cell(0, 10, txt=safe_text)
 
-    for img_buf in chart_images:
-        pdf.add_page()
-        pdf.image(img_buf, x=10, y=30, w=180)
+    # Write chart images to temp files and add them to PDF
+    temp_files = []
+    try:
+        for i, img_buf in enumerate(chart_images):
+            # ensure buffer is at start
+            try:
+                img_buf.seek(0)
+            except Exception:
+                pass
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                tmp_file.write(img_buf.getbuffer())
+                tmp_path = tmp_file.name
+                temp_files.append(tmp_path)
 
-    pdf_output = BytesIO()
-    pdf.output(pdf_output)
-    pdf_output.seek(0)
-    return pdf_output
+            pdf.add_page()
+            pdf.image(tmp_path, x=10, y=30, w=180)
+
+        # output PDF as bytes safely
+        pdf_str = pdf.output(dest='S')  # returns str in Py3
+        if isinstance(pdf_str, str):
+            # encode to latin-1 bytes (fpdf uses latin1 internally)
+            pdf_bytes = pdf_str.encode('latin-1', 'replace')
+        else:
+            pdf_bytes = pdf_str
+
+        pdf_output = BytesIO()
+        pdf_output.write(pdf_bytes)
+        pdf_output.seek(0)
+        return pdf_output
+
+    finally:
+        # cleanup temp files
+        for f in temp_files:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
 
 
 # -------------------- FILE UPLOAD + DISPLAY --------------------
