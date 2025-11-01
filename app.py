@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 from io import BytesIO
 from fpdf import FPDF
-import openai
-import os
+import base64
+from openai import OpenAI
+import tempfile
+import numpy as np
 
 # --- API Key Setup ---
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- Streamlit App Configuration ---
 st.set_page_config(page_title="AI Department Data Analyzer", layout="wide")
@@ -37,7 +38,7 @@ def generate_ai_insights(df, department):
     Mention trends, anomalies, and potential recommendations.
     """
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": ai_prompt}]
     )
@@ -48,7 +49,7 @@ def generate_ai_insights(df, department):
 
 # --- Helper Function: Generate Charts ---
 def generate_charts(df):
-    charts = []
+    chart_images = []
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
     for col in numeric_cols[:3]:  # limit to 3 charts for simplicity
@@ -58,33 +59,34 @@ def generate_charts(df):
         buf = BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight")
         buf.seek(0)
-        charts.append(fig)
-    return charts
+        chart_images.append(buf)
+        plt.close(fig)
+    return chart_images
 
 
-# --- Helper Function: Export PDF Report ---
-def generate_pdf_report(insights_text, charts, department, ai_text):
+# --- ✅ Fixed PDF Generation Function ---
+def generate_pdf_report(insights_text, chart_images, department, ai_text=""):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, txt=f"{department} Department Analysis Report", ln=True, align="C")
-
+    pdf.cell(200, 10, txt=f"{department} AI Report", ln=True, align="C")
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, txt="AI Insights Summary:\n\n" + insights_text)
-    pdf.ln(5)
-    pdf.multi_cell(0, 10, txt="AI Data Analysis:\n\n" + ai_text)
+    pdf.multi_cell(0, 10, txt=insights_text)
 
-    # Add charts properly with file names
-    if charts:
-        for i, chart in enumerate(charts):
-            img_buf = BytesIO()
-            chart.savefig(img_buf, format="png", bbox_inches="tight")
-            img_buf.seek(0)
-            img_filename = f"chart_{i}.png"
-            with open(img_filename, "wb") as f:
-                f.write(img_buf.getvalue())
+    if ai_text:
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, txt="AI Summary", ln=True)
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, txt=ai_text)
+
+    # ✅ Save charts as temp files
+    for i, img_buf in enumerate(chart_images):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            tmp.write(img_buf.getbuffer())
+            tmp.flush()
             pdf.add_page()
-            pdf.image(img_filename, x=10, y=30, w=180)
+            pdf.image(tmp.name, x=10, y=30, w=180)
 
     pdf_output = BytesIO()
     pdf.output(pdf_output)
@@ -107,7 +109,7 @@ if uploaded_file is not None:
 
                 charts = generate_charts(df)
                 for chart in charts:
-                    st.pyplot(chart)
+                    st.image(chart.getvalue())
 
                 st.session_state["ai_text"] = ai_text
                 st.session_state["charts"] = charts
